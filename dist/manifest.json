@@ -1,0 +1,10 @@
+{
+  "release": "v3.0.0-public.1",
+  "firmware_file": "zqhd-tiny-public.uf2",
+  "firmware_sha256": "c093239ca36dbb6db76e0098fca17810d057beeb15bfccd81502d8ec8af80d7f",
+  "cpu_mhz": 250,
+  "flash_bytes": 509312,
+  "static_ram_bytes": 213712,
+  "source_baseline": "local accepted Tiny v3; public Noto glyph rebuild",
+  "public_build_hardware_tested": false
+}

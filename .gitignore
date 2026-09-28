@@ -1,0 +1,14 @@
+.DS_Store
+.venv/
+__pycache__/
+*.pyc
+.toolchain/
+.build/
+*.log
+.env
+web/models/*.pb
+web/preview-settings.json*
+recordings/
+backups/
+*.bin
+*.uf2

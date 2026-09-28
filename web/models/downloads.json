@@ -1,0 +1,12 @@
+[
+  {
+    "file": "EDSR_x2.pb",
+    "url": "https://raw.githubusercontent.com/Saafke/EDSR_Tensorflow/06c7bd65b0305c2955328f8f2721ea86c341f660/models/EDSR_x2.pb",
+    "sha256": "585623221baa070279a0d1e7e113a4c3faba0f318ca7fdd9a65d9afc0763d9b4"
+  },
+  {
+    "file": "FSRCNN_x2.pb",
+    "url": "https://raw.githubusercontent.com/Saafke/FSRCNN_Tensorflow/6a4812c4ef1c4f5947d79beafa32a05a6eb4a94d/models/FSRCNN_x2.pb",
+    "sha256": "366b33f0084c7b3f2bf6724f0a2c77bca94fcec9d7b6d72389d330073b380d5c"
+  }
+]

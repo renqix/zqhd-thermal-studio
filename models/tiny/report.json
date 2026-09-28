@@ -1,0 +1,19 @@
+{
+  "training_scenes": 360,
+  "validation_scenes": 50,
+  "test_scenes": 80,
+  "real_frames_check_only": 32,
+  "architecture": "9→16 ReLU→8 ReLU→4 residual subpixels",
+  "parameters": 332,
+  "mac_per_32x32_frame": 311296,
+  "packed_model_bytes": 428,
+  "test_psnr_db": {
+    "bilinear": 45.174,
+    "cubic": 43.339,
+    "lanczos": 43.003,
+    "edsr": 44.226,
+    "student_float": 46.514,
+    "student_int8": 46.438
+  },
+  "limitation": "合成场景指标；真实传感器只有一个视角，不能证明真实分辨率提高。未在单片机实测时延或刷写。"
+}

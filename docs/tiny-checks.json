@@ -1,0 +1,7 @@
+{
+  "cases": 69,
+  "pixels": 282624,
+  "cpp_numpy_exact_match": true,
+  "asan_ubsan_passed": true,
+  "renderer_pixels": 55696
+}
