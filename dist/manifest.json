@@ -1,10 +1,18 @@
 {
-  "release": "v3.0.0-public.1",
+  "release": "v12.0.0-public.1",
+  "date": "2026-10-11",
   "firmware_file": "zqhd-tiny-public.uf2",
-  "firmware_sha256": "c093239ca36dbb6db76e0098fca17810d057beeb15bfccd81502d8ec8af80d7f",
-  "cpu_mhz": 250,
-  "flash_bytes": 509312,
-  "static_ram_bytes": 213712,
-  "source_baseline": "local accepted Tiny v3; public Noto glyph rebuild",
-  "public_build_hardware_tested": false
+  "firmware_sha256": "b6bc3e479582f9eb11867df2fd97609185995b425bacf685f4e9006c7ec7f41e",
+  "cpu_mhz": 264,
+  "flash_bytes": 516448,
+  "static_ram_bytes": 227436,
+  "remaining_stack_heap_bytes": 34708,
+  "firmware_revision": 12,
+  "tiny_revision": 5,
+  "contour_revision": 3,
+  "source_baseline": "第12版外轮廓本地试用源码；Noto Sans SC公开字形重编译",
+  "public_build_hardware_tested": false,
+  "local_baseline_short_hardware_check_passed": true,
+  "user_image_quality_accepted": false,
+  "long_term_stability_verified": false
 }

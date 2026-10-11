@@ -11,7 +11,13 @@ int thermalSensorBegin() {
   sensor_power_on();delay(500);
   Wire.setSDA(12);Wire.setSCL(13);Wire.begin();Wire.setClock(400000);
   uint8_t status=0;
-  read_sensor_register(STATUS_REGISTER,&status,1);
+  // 热重启后首次探头探测可能暂时失败；仅在读取状态阶段有限重试。
+  // 不重写校准数据，也不掩盖持续失败。
+  for(int attempt=0;attempt<3;++attempt){
+    sensorIoError=false;read_sensor_register(STATUS_REGISTER,&status,1);
+    if(!sensorIoError)break;
+    if(attempt<2){Wire.end();delay(100);Wire.begin();Wire.setClock(400000);}
+  }
   if(sensorIoError){Serial.println("HEIMANN: 0x1A no response");return -10;}
   pixc2_0=calibrationPixels;pixc2=calibrationPixels;
   read_eeprom();

@@ -9,8 +9,9 @@
 |MLX90640备用驱动|源文件内Melexis署名|Apache-2.0；本设备实际使用Heimann|
 |One Euro|[casiez/OneEuroFilter](https://github.com/casiez/OneEuroFilter)|MIT，完整声明在one_euro_pixel.h|
 |EDSR与FSRCNN教师/预训练模型|[Saafke/EDSR_Tensorflow](https://github.com/Saafke/EDSR_Tensorflow)、[FSRCNN_Tensorflow](https://github.com/Saafke/FSRCNN_Tensorflow)|保留web/models内Apache-2.0许可证；固定版本及散列见downloads.json|
-|Noto Sans CJK字形|[notofonts/noto-cjk](https://github.com/notofonts/noto-cjk)|SIL OFL1.1，见licenses/Noto-OFL.txt；只带字形子集|
+|Noto Sans SC字形|[notofonts/noto-cjk](https://github.com/notofonts/noto-cjk)|SIL OFL1.1，见licenses/Noto-OFL.txt、Noto-font-notices.txt与Noto-source.json；只带字形子集|
 |LVGL8.3.11 / TFT_eSPI2.5.43|[lvgl/lvgl](https://github.com/lvgl/lvgl)、[Bodmer/TFT_eSPI](https://github.com/Bodmer/TFT_eSPI)|MIT/FreeBSD等原许可见licenses，构建时由Arduino安装|
+|外轮廓算法思路|[OpenCV轮廓层级文档](https://docs.opencv.org/4.x/d9/d8b/tutorial_py_contours_hierarchy.html)|仅参考RETR_EXTERNAL概念；设备端自行实现整数温差分区，不链接或携带OpenCV源码|
 |Arduino-Pico3.9.5|[earlephilhower/arduino-pico](https://github.com/earlephilhower/arduino-pico)|核心及依赖按上游各自许可，构建时安装|
 
 Tiny学生模型、合成热场数据、训练脚本和本项目新增代码按GPL-3.0发布。字体子集与第三方文件仍按各自原许可。下载官方大模型不会把私人传感器数据上传。

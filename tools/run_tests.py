@@ -10,6 +10,6 @@ with tempfile.TemporaryDirectory() as temporary:
         if source.stem=='one_euro_test':
             obj=Path(temporary)/'reference.o'
             subprocess.run([shutil.which('clang') or 'cc','-c',str(root/'tests/reference/SF1eFilter.c'),'-o',str(obj)],check=True);objects=[str(obj)]
-        subprocess.run([compiler,'-std=c++11','-O2','-fsanitize=address,undefined',str(source),*objects,'-o',str(out)],check=True)
+        subprocess.run([compiler,'-std=c++17','-O2','-fsanitize=address,undefined',str(source),*objects,'-o',str(out)],check=True)
         subprocess.run([str(out)],check=True)
 print('全部主机测试通过')

@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 
 PROJECT=Path(__file__).resolve().parents[1]
-ROOT=PROJECT/"models/tiny"
+ROOT=PROJECT/"models/tiny/legacy-v3"
 WEB=PROJECT/"web"
 rng=np.random.default_rng(92817)
 cv2.setNumThreads(2)

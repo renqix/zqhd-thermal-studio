@@ -1,6 +1,19 @@
 {
-  "repo": "https://github.com/notofonts/noto-cjk",
-  "commit": "f8d157532fbfaeda587e826d4cd5b21a49186f7c",
-  "path": "Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf",
-  "sha256": "2c76254f6fc379fddfce0a7e84fb5385bb135d3e399294f6eeb6680d0365b74b"
+  "upstream": "https://github.com/notofonts/noto-cjk",
+  "distribution": "https://pypi.org/project/pygame_gui/0.6.14/",
+  "distribution_file": "pygame_gui/data/NotoSansSC-Regular.otf",
+  "sha256": "63fdadb47c21197170f3cda6c60e98e481b8a1eb28e5f44102da51bec17d123b",
+  "license": "SIL OFL 1.1",
+  "note": "第12版使用pygame_gui 0.6.14分发的Noto Sans SC字形；旧第3版字体来源随旧Release保留。",
+  "embedded_license_metadata": {
+    "0": [
+      "© 2014-2020 Adobe (http://www.adobe.com/)."
+    ],
+    "13": [
+      "This Font Software is licensed under the SIL Open Font License, Version 1.1. This Font Software is distributed on an \"AS IS\" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the SIL Open Font License for the specific language, permissions and limitations governing your use of this Font Software."
+    ],
+    "14": [
+      "http://scripts.sil.org/OFL"
+    ]
+  }
 }

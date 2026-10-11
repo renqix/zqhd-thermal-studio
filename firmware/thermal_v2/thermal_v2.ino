@@ -1,3 +1,4 @@
+#include "mode_options.h"
 // 第二版测试：One Euro滤波、实体连击；沿用第一版250MHz启动配置。
 #include <Arduino.h>
 #include <Wire.h>
@@ -12,7 +13,9 @@
 #include "CST816T.h"
 #include "mapping_logic.h"
 #include "thermal_processing.h"
+#include "background_denoise.h"
 #include "tiny_student.h"
+#include "tiny_models.h"
 #include "ui_logic.h"
 #include "thermal_layout.h"
 #include "extrema_tracker.h"
@@ -34,13 +37,27 @@ static uint8_t levelIndex[1024];
 static lv_disp_draw_buf_t displayDrawBuffer;
 static lv_obj_t *canvas,*lowLabel,*highLabel,*maxLabel,*minLabel,*batteryHandle,*maxCross,*minCross,*pointCross;
 static lv_obj_t *messageLabel,*pointLabel,*pauseLabel,*modeSwitch,*dialog=nullptr,*rangeSlider,*rangeValue;
-static lv_obj_t *emissivitySlider,*emissivityValue,*brightnessValue,*filterButtons[4],*interpButtons[5];
+static lv_obj_t *emissivitySlider,*emissivityValue,*brightnessValue,*filterButtons[3],*interpButtons[2];
 static MappingLimits limits;
 static MappingLimits manualLimits;
-static bool captureRangeOnEnable=false;
+static bool captureRangeOnEnable=true;
+static bool bootCapturePending=false; // 开机持续自适应温区，不抓取固定范围。
 static ThermalResampler resampler;
 static TinyThermalResampler tinyResampler;
 static DisplayFilter displayFilter;
+static BackgroundDenoise backgroundDenoise;
+static int backgroundAmount=35;
+static lv_obj_t *backgroundValue=nullptr;
+static bool contourEnabled=false;
+static lv_obj_t *contourSwitch=nullptr;
+// 增强档启用保细节混合查表；旧神经预测接口仅允许关闭。
+static int modelMode=0;
+
+
+static bool modelHistory=false,predictionPending=false;
+static uint32_t predictionDue=0,modelDenoiseUs=0,modelForecastUs=0,predictionRenderUs=0,modelPredictions=0;
+static uint32_t sensorIntervalMs=125;
+
 static ExtremaTracker hotTracker(true),coldTracker(false);
 static BottomSwipe bottomSwipe;
 static bool customMapping=false,recolor=true,editingLower=true,settingsOpen=false,openSettingsRequested=false;
@@ -54,13 +71,13 @@ static uint8_t usbCommandLength=0;
 static float usbPixels[1024];
 static uint32_t usbSequence=0,lastMirror=0,lastUsbState=0;
 static bool touchDown=false,suppressPoint=false,capturePending=false,capturing=false;
-static int paletteMode=4,settingsTab=0;
+static int paletteMode=0,settingsTab=0;
 static PaletteToggle paletteToggle;
 static uint16_t mirrorRuns[280*12*2];
 static uint16_t mirrorPalette[256];
 static int16_t mirrorHash[512];
 static uint32_t mirrorBytes=0,lastCaptureUs=0;
-static int filterMode=3,interpolationMode=4,pendingTemperature=20,pointX=118,pointY=118,brightness=50;
+static int filterMode=3,interpolationMode=4,pendingTemperature=20,pointX=118,pointY=118,brightness=100;
 static int batteryPercent=100,lastValidState=-1;
 static uint32_t lastTick=0,lastBattery=0,lastDiagnostic=0,lastPaint=0;
 static uint32_t filterUs=0,processingUs=0,renderUs=0,flushUs=0,maxLoopUs=0,maxTouchUs=0,invalidTouches=0;
@@ -142,7 +159,14 @@ static lv_obj_t *createDialog(){
   lv_obj_set_style_pad_all(o,0,0);lv_obj_set_style_radius(o,0,0);lv_obj_set_style_border_width(o,0,0);
   lv_obj_set_style_bg_color(o,lv_color_hex(0x111922),0);lv_obj_clear_flag(o,LV_OBJ_FLAG_SCROLLABLE);return o;
 }
-static void closeDialog(){if(dialog)lv_obj_del_async(dialog);dialog=nullptr;settingsOpen=false;recolor=true;}
+// 实验版仅使用显示滤波，停用未启用的旧神经预测并释放其缓冲区。
+static void applyDisplayModel(float interval){
+  predictionPending=false;modelHistory=false;
+  displayFilter.apply(pixels,filteredPixels,filterMode,interval);
+  backgroundDenoise.apply(filteredPixels,backgroundAmount);
+}
+
+static void closeDialog(){if(dialog)lv_obj_del_async(dialog);dialog=nullptr;contourSwitch=nullptr;backgroundValue=nullptr;settingsOpen=false;recolor=true;}
 static void showSliderValue(){
   pendingTemperature=constrain(pendingTemperature,-30,300);
   pendingTemperature=editingLower?min(pendingTemperature,limits.upper):max(pendingTemperature,limits.lower);
@@ -168,10 +192,10 @@ static void openPicker(bool lower){
   lv_obj_add_event_cb(match,[](lv_event_t *){int lo,hi;if(currentRange(lo,hi)){pendingTemperature=editingLower?lo:hi;showSliderValue();}},LV_EVENT_CLICKED,nullptr);
   showSliderValue();
 }
-static void styleChoice(lv_obj_t **buttons,int choice,int count=4){for(int i=0;i<count;++i)lv_obj_set_style_bg_color(buttons[i],lv_color_hex(i==choice?0x147AB8:0x26394B),0);}
+static void styleChoice(lv_obj_t **buttons,int choice,const int *ids,int count){for(int i=0;i<count;++i)lv_obj_set_style_bg_color(buttons[i],lv_color_hex(ids[i]==choice?0x147AB8:0x26394B),0);}
 static void rebuildColors(){
   for(int i=0;i<1024;++i)levelIndex[i]=i*179/1023;
-  if(canvas)for(int i=0;i<256;++i){lv_color_t color;color.full=paletteTables[paletteMode][i<180?i:179];lv_canvas_set_palette(canvas,i,color);}
+  if(canvas)for(int i=0;i<256;++i){lv_color_t color;color.full=i==180?0xFFFF:i==181?0x0000:paletteTables[paletteMode][i<180?i:179];lv_canvas_set_palette(canvas,i,color);}
   recolor=true;
 }
 static void openSettings();
@@ -191,11 +215,23 @@ static void openSettings(){
   if(dialog)return;settingsOpen=true;dialog=createDialog();
   label(dialog,"设置",16,14,chineseFont);
   lv_obj_t *back=button(dialog,"返回",209,8,58,32,chineseFont);lv_obj_add_event_cb(back,[](lv_event_t *){closeDialog();},LV_EVENT_CLICKED,nullptr);
-  const char *tabs[]={"图像","测温","映射"};
-  for(int i=0;i<3;++i){
-    lv_obj_t *tab=button(dialog,tabs[i],12+i*88,45,80,32,chineseFont);
+  const char *tabs[]={"图像","测温","映射","降噪"};
+  for(int i=0;i<4;++i){
+    lv_obj_t *tab=button(dialog,tabs[i],12+i*66,45,60,32,chineseFont);
     lv_obj_set_style_bg_color(tab,lv_color_hex(i==settingsTab?0x147AB8:0x26394B),0);
     lv_obj_add_event_cb(tab,[](lv_event_t *e){settingsTab=(intptr_t)lv_event_get_user_data(e);closeDialog();openSettings();},LV_EVENT_CLICKED,(void*)(intptr_t)i);
+  }
+  if(settingsTab==3){
+    label(dialog,"背景降噪",17,94,chineseFont);
+    backgroundValue=label(dialog,"",211,96,&lv_font_montserrat_14);
+    lv_label_set_text_fmt(backgroundValue,"%d",backgroundAmount);
+    lv_obj_t *slider=lv_slider_create(dialog);lv_obj_set_pos(slider,25,133);lv_obj_set_size(slider,230,12);
+    lv_obj_set_ext_click_area(slider,16);lv_slider_set_range(slider,0,100);lv_slider_set_value(slider,backgroundAmount,LV_ANIM_OFF);
+    lv_obj_add_event_cb(slider,[](lv_event_t *e){backgroundAmount=lv_slider_get_value(lv_event_get_target(e));lv_label_set_text_fmt(backgroundValue,"%d",backgroundAmount);},LV_EVENT_VALUE_CHANGED,nullptr);
+    label(dialog,"0",22,155,&lv_font_montserrat_12);label(dialog,"100",234,155,&lv_font_montserrat_12);
+    label(dialog,"保留细节",17,177,chineseFont);label(dialog,"背景更净",194,177,chineseFont);
+    label(dialog,"仅影响画面",17,208,chineseFont);
+    return;
   }
   if(settingsTab==2){
     label(dialog,"开启自定义时",17,92,chineseFont);
@@ -208,17 +244,21 @@ static void openSettings(){
   }
   if(settingsTab==0){
   label(dialog,"滤波",15,97,chineseFont);label(dialog,"插值",15,137,chineseFont);
-  const char *filters[]={"关闭","平滑","清晰","增强"};const char *interps[]={"关闭","线性","三次","L3","Tiny"};
-  for(int i=0;i<4;++i){
-    filterButtons[i]=button(dialog,filters[i],68+i*51,89,48,32,chineseFont);
-    lv_obj_add_event_cb(filterButtons[i],[](lv_event_t *e){filterMode=(intptr_t)lv_event_get_user_data(e);if(shownSequence)displayFilter.apply(pixels,filteredPixels,filterMode);styleChoice(filterButtons,filterMode);recolor=true;},LV_EVENT_CLICKED,(void*)(intptr_t)i);
+  const char *filters[]={"关闭","平滑","增强"};const char *interps[]={"关闭","Tiny+"};
+  for(int i=0;i<3;++i){
+    filterButtons[i]=button(dialog,filters[i],68+i*68,89,63,32,chineseFont);
+    lv_obj_add_event_cb(filterButtons[i],[](lv_event_t *e){filterMode=(intptr_t)lv_event_get_user_data(e);if(shownSequence)applyDisplayModel(.125f);styleChoice(filterButtons,filterMode,filterIds,3);recolor=true;},LV_EVENT_CLICKED,(void*)(intptr_t)filterIds[i]);
   }
-  for(int i=0;i<5;++i){
-    interpButtons[i]=button(dialog,interps[i],64+i*42,129,40,32,i==4?&lv_font_montserrat_12:chineseFont);
-    lv_obj_add_event_cb(interpButtons[i],[](lv_event_t *e){interpolationMode=(intptr_t)lv_event_get_user_data(e);styleChoice(interpButtons,interpolationMode,5);recolor=true;},LV_EVENT_CLICKED,(void*)(intptr_t)i);
+  for(int i=0;i<2;++i){
+    interpButtons[i]=button(dialog,interps[i],68+i*102,129,97,32,i==0?chineseFont:&lv_font_montserrat_12);
+    lv_obj_add_event_cb(interpButtons[i],[](lv_event_t *e){interpolationMode=(intptr_t)lv_event_get_user_data(e);styleChoice(interpButtons,interpolationMode,interpolationIds,2);recolor=true;},LV_EVENT_CLICKED,(void*)(intptr_t)interpolationIds[i]);
   }
-  styleChoice(filterButtons,filterMode);styleChoice(interpButtons,interpolationMode,5);
-    lv_obj_t *pal=button(dialog,"显示模式",12,181,256,42,chineseFont);
+  styleChoice(filterButtons,filterMode,filterIds,3);styleChoice(interpButtons,interpolationMode,interpolationIds,2);
+    label(dialog,"轮廓",15,183,chineseFont);
+    contourSwitch=lv_switch_create(dialog);lv_obj_set_pos(contourSwitch,75,181);lv_obj_set_size(contourSwitch,50,27);lv_obj_set_ext_click_area(contourSwitch,8);
+    if(contourEnabled)lv_obj_add_state(contourSwitch,LV_STATE_CHECKED);
+    lv_obj_add_event_cb(contourSwitch,[](lv_event_t *e){contourEnabled=lv_obj_has_state(lv_event_get_target(e),LV_STATE_CHECKED);recolor=true;},LV_EVENT_VALUE_CHANGED,nullptr);
+    lv_obj_t *pal=button(dialog,"显示模式",143,174,125,42,chineseFont);
     lv_obj_add_event_cb(pal,[](lv_event_t *){openPalettes();},LV_EVENT_CLICKED,nullptr);
     return;
   }
@@ -278,7 +318,13 @@ static void drawThermal(){
   const float low=pixels[minIndex],high=pixels[maxIndex];
   const float mapLow=customMapping?limits.lower:low,mapHigh=customMapping?limits.upper:high;
   auto putPixel=[](int x,int y,uint16_t level){imageBuffer[256*4+y*236+x]=levelIndex[level];};
-  if(interpolationMode==4)tinyResampler.render(filteredPixels,mapLow,mapHigh,putPixel);else if(interpolationMode==0)resampler.renderNearest(filteredPixels,mapLow,mapHigh,putPixel);else if(interpolationMode==3)resampler.renderLanczos(filteredPixels,mapLow,mapHigh,putPixel);else resampler.render(filteredPixels,mapLow,mapHigh,interpolationMode==2,putPixel);
+  if(interpolationMode==4)tinyResampler.render(filteredPixels,mapLow,mapHigh,putPixel);
+  else resampler.renderNearest(filteredPixels,mapLow,mapHigh,putPixel);
+  if(contourEnabled){
+    tinyResampler.prepareContours(filteredPixels);
+    tinyResampler.overlay([](int x,int y){const int dx[4]={-1,1,0,0},dy[4]={0,0,-1,1};for(int k=0;k<4;++k){int xx=x+dx[k],yy=y+dy[k];if(xx>=0&&xx<236&&yy>=0&&yy<236)imageBuffer[256*4+yy*236+xx]=181;}});
+    tinyResampler.overlay([](int x,int y){imageBuffer[256*4+y*236+x]=180;});
+  }
   lv_obj_invalidate(canvas);char text[24];snprintf(text,sizeof(text),"MAX %.1f",high);setText(maxLabel,text);snprintf(text,sizeof(text),"MIN %.1f",low);setText(minLabel,text);
   snprintf(text,sizeof(text),"%.1f",pixels[ThermalLayout::sample(pointX,pointY)]);setText(pointLabel,text);
   const int xx[3]={pointX,(int)std::lround(hotTracker.x()*235/31),(int)std::lround(coldTracker.x()*235/31)},yy[3]={pointY,235-(int)std::lround(hotTracker.y()*235/31),235-(int)std::lround(coldTracker.y()*235/31)};
@@ -311,8 +357,20 @@ static void pollButton(uint32_t now){
 }
 // USB网页协议：仅在电脑显式开启时输出原始矩阵；不修改采样和测温值。
 static void usbState(){
-  Serial.printf("#STATE {\"protocol\":1,\"cpu\":%lu,\"seq\":%lu,\"sensor\":%d,\"lower\":%d,\"upper\":%d,\"custom\":%d,\"palette\":%d,\"filter\":%d,\"interpolation\":%d,\"emissivity\":%d,\"brightness\":%d,\"paused\":%d,\"locked\":%d,\"battery\":%d,\"touch_error\":%u,\"render_us\":%lu,\"mirror\":%d,\"activation\":%d,\"capture_us\":%lu,\"mirror_bytes\":%lu,\"filter_us\":%lu,\"processing_us\":%lu,\"tiny_model\":1,\"enhancement_modes\":1,\"heat_size\":236,\"layout\":4,\"tracking\":2}\n",
-    (unsigned long)(clock_get_hz(clk_sys)/1000000),(unsigned long)sharedSequence,(int)sensorState,limits.lower,limits.upper,customMapping,paletteMode,filterMode,interpolationMode,(int)actualEmissivity,brightness,paused,screenLocked,batteryPercent,touch.lastError,(unsigned long)renderUs,usbMirror,captureRangeOnEnable,(unsigned long)lastCaptureUs,(unsigned long)mirrorBytes,(unsigned long)filterUs,(unsigned long)processingUs);
+  Serial.printf("#MODELS {\"mode\":%d,\"denoise_us\":%lu,\"forecast_us\":%lu,\"prediction_render_us\":%lu,\"predictions\":%lu,\"revision\":4}\n",modelMode,(unsigned long)modelDenoiseUs,(unsigned long)modelForecastUs,(unsigned long)predictionRenderUs,(unsigned long)modelPredictions);
+
+  Serial.printf("#STATE {\"protocol\":1,\"cpu\":%lu,\"seq\":%lu,\"sensor\":%d,\"lower\":%d,\"upper\":%d,\"custom\":%d,\"palette\":%d,\"filter\":%d,\"interpolation\":%d,\"emissivity\":%d,\"brightness\":%d,\"paused\":%d,\"locked\":%d,\"battery\":%d,\"touch_error\":%u,\"render_us\":%lu,\"mirror\":%d,\"activation\":%d,\"capture_us\":%lu,\"mirror_bytes\":%lu,\"filter_us\":%lu,\"processing_us\":%lu,\"tiny_model\":1,\"tiny_revision\":5,\"firmware_revision\":12,\"enhancement_modes\":1,\"heat_size\":236,\"layout\":4,\"tracking\":2,\"denoise_revision\":2,\"model_benchmark\":1,\"display_models\":4,\"detail_recovery\":1,\"detail_hybrid\":5,\"auto_mapping_boot\":1,\"simplified_modes\":2,\"background\":%d,\"background_revision\":1,\"contour\":%d,\"contour_revision\":3,\"neural_denoise\":%d,\"prediction_mode\":%d}\n",
+    (unsigned long)(clock_get_hz(clk_sys)/1000000),(unsigned long)sharedSequence,(int)sensorState,limits.lower,limits.upper,customMapping,paletteMode,filterMode,interpolationMode,(int)actualEmissivity,brightness,paused,screenLocked,batteryPercent,touch.lastError,(unsigned long)renderUs,usbMirror,captureRangeOnEnable,(unsigned long)lastCaptureUs,(unsigned long)mirrorBytes,(unsigned long)filterUs,(unsigned long)processingUs,backgroundAmount,(int)contourEnabled,modelMode>0&&filterMode==3,modelMode==2);
+}
+// 模型仅供显式串口测速，不参与显示/测温。无堆分配，每次只测一帧。
+static void benchmarkModels(int mode){
+  int16_t q[1024];for(int i=0;i<1024;++i)q[i]=std::lround(constrain(pixels[i],-40.0f,300.0f)*32);
+  volatile int32_t checksum=0;const uint32_t start=micros();
+  for(int y=0;y<32;++y)for(int x=0;x<32;++x){int8_t features[18];int k=0;
+    for(int dy=-1;dy<=1;++dy)for(int dx=-1;dx<=1;++dx){const int j=TinyModels::clamp(y+dy)*32+TinyModels::clamp(x+dx);const int8_t value=TinyModels::feature((q[j]-q[y*32+x])*8);features[k]=value;features[k+9]=value;++k;}
+    checksum+=mode?TinyModels::forecast(features):TinyModels::denoise(features);
+  }
+  Serial.printf("#BENCH {\"mode\":%d,\"pixels\":1024,\"us\":%lu,\"checksum\":%ld,\"cpu\":250,\"display_active\":false}\n",mode,(unsigned long)(micros()-start),(long)checksum);
 }
 static void usbExecute(){
   unsigned long id=0;char name[20]={};int a=0,b=0;bool ok=false;
@@ -325,13 +383,17 @@ static void usbExecute(){
     else if(!strcmp(name,"activation")&&(a==0||a==1)){captureRangeOnEnable=a;ok=true;}
     else if(!strcmp(name,"match")&&(a==0||a==1||a==2)){int lo,hi;if(currentRange(lo,hi)){if(a==0)limits.lower=min(lo,limits.upper);if(a==1)limits.upper=max(hi,limits.lower);if(a==2){limits.lower=lo;limits.upper=hi;}manualLimits=limits;updateLimitLabels();ok=true;}}
     else if(!strcmp(name,"palette")&&a>=0&&a<7){paletteMode=paletteToggle.select(paletteMode,a);rebuildColors();ok=true;}
-    else if(!strcmp(name,"filter")&&a>=0&&a<4){filterMode=a;displayFilter.apply(pixels,filteredPixels,filterMode);recolor=true;ok=true;}
-    else if(!strcmp(name,"interpolation")&&a>=0&&a<5){interpolationMode=a;recolor=true;ok=true;}
+    else if(!strcmp(name,"filter")&&validFilter(a)){filterMode=a;applyDisplayModel(.125f);recolor=true;ok=true;}
+    else if(!strcmp(name,"interpolation")&&validInterpolation(a)){interpolationMode=a;recolor=true;ok=true;}
     else if(!strcmp(name,"emissivity")&&a>=10&&a<=100){desiredEmissivity=a;ok=true;}
+    else if(!strcmp(name,"background")&&a>=0&&a<=100){backgroundAmount=a;ok=true;}
+    else if(!strcmp(name,"contour")&&(a==0||a==1)){contourEnabled=a;if(contourSwitch){if(a)lv_obj_add_state(contourSwitch,LV_STATE_CHECKED);else lv_obj_clear_state(contourSwitch,LV_STATE_CHECKED);}recolor=true;ok=true;}
     else if(!strcmp(name,"brightness")&&a>=5&&a<=100){brightness=a;analogWrite(4,a*255/100);ok=true;}
     else if(!strcmp(name,"paused")&&(a==0||a==1)){if(paused!=bool(a))togglePause();ok=true;}
     else if(!strcmp(name,"locked")&&(a==0||a==1)){screenLocked=a;touchDown=false;bottomSwipe.end();if(a)closeDialog();lv_obj_set_style_bg_color(lockLabel,lv_color_hex(a?0xFFE066:0x25303A),0);ok=true;}
     else if(!strcmp(name,"point")&&count==4&&a>=0&&a<32&&b>=0&&b<32){pointX=ThermalLayout::xOf(b*32+a);pointY=ThermalLayout::yOf(b*32+a);recolor=true;ok=true;}
+    else if(!strcmp(name,"benchmodels")&&(a==0||a==1)){benchmarkModels(a);ok=true;}
+    else if(!strcmp(name,"model")&&a==0){modelMode=a;modelHistory=false;predictionPending=false;recolor=true;ok=true;}
     else if(!strcmp(name,"state")){ok=true;}
   }
   Serial.printf("#ACK %lu %d\n",id,ok);usbState();
@@ -361,10 +423,12 @@ void loop(){
   // 输入和控件动画优先；设置/滑块打开时跳过被遮挡的热图渲染。
   lv_timer_handler();if(openSettingsRequested){openSettingsRequested=false;openSettings();}
   bool newFrame=false;mutex_enter_blocking(&frameMutex);if(!paused&&sharedSequence!=shownSequence){memcpy(pixels,sharedPixels,sizeof(pixels));shownSequence=sharedSequence;newFrame=true;}mutex_exit(&frameMutex);
-  if(newFrame){const uint32_t filterStart=micros();const float interval=receivedAt?(now-receivedAt)/1000.0f:.133333333f;displayFilter.apply(pixels,filteredPixels,filterMode,interval);hotTracker.update(filteredPixels,interval);coldTracker.update(filteredPixels,interval);filterUs=micros()-filterStart;receivedAt=now;recolor=true;}
+  if(newFrame){const uint32_t filterStart=micros();const float interval=receivedAt?(now-receivedAt)/1000.0f:.133333333f;sensorIntervalMs=constrain((int)(interval*1000),60,250);applyDisplayModel(interval);hotTracker.update(filteredPixels,interval);coldTracker.update(filteredPixels,interval);filterUs=micros()-filterStart;receivedAt=now;recolor=true;}
+  if(newFrame&&bootCapturePending&&setCustomMapping(true))bootCapturePending=false;
   const bool valid=shownSequence&&(paused||now-receivedAt<2000);
   if((int)valid!=lastValidState){lastValidState=valid;lv_obj_t *tags[]={maxCross,minCross,pointCross,maxLabel,minLabel};for(auto *tag:tags){if(valid)lv_obj_clear_flag(tag,LV_OBJ_FLAG_HIDDEN);else lv_obj_add_flag(tag,LV_OBJ_FLAG_HIDDEN);}if(valid){lv_obj_add_flag(messageLabel,LV_OBJ_FLAG_HIDDEN);lv_obj_clear_flag(pointLabel,LV_OBJ_FLAG_HIDDEN);}else{lv_obj_clear_flag(messageLabel,LV_OBJ_FLAG_HIDDEN);lv_obj_add_flag(pointLabel,LV_OBJ_FLAG_HIDDEN);setText(messageLabel,sensorState<0?"探头无数据":"等待数据");setText(maxLabel,"--");setText(minLabel,"--");}}
   if(!dialog&&recolor&&valid&&now-lastPaint>=30){drawThermal();processingUs=filterUs+renderUs;lastPaint=now;recolor=false;}
+
   updateBattery(now);
   for(int budget=0;Serial.available()&&budget<100;++budget){
     const char command=Serial.read();

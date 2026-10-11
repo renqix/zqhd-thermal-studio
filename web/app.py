@@ -294,7 +294,7 @@ def matrix():
 @app.post('/api/params')
 def params():
     try:
-        data=request.get_json(); allowed={'lower','upper','custom','palette','filter','interpolation','emissivity','brightness','paused','locked','mirror','activation','match','point'}
+        data=request.get_json(); allowed={'lower','upper','custom','palette','filter','interpolation','emissivity','brightness','background','contour','paused','locked','mirror','activation','match','point'}
         if not isinstance(data,dict) or not data or set(data)-allowed:raise ValueError('无效参数')
         commands=[]
         if 'lower' in data or 'upper' in data:
@@ -302,7 +302,7 @@ def params():
             a,b=data['lower'],data['upper']
             if type(a)!=int or type(b)!=int or not -30<=a<=b<=300:raise ValueError('需要 -30 ≤ 最低 ≤ 最高 ≤ 300')
             commands.append(('range',a,b))
-        bounds={'custom':(0,1),'palette':(0,6),'filter':(0,3),'interpolation':(0,4),'emissivity':(10,100),'brightness':(5,100),'paused':(0,1),'locked':(0,1),'mirror':(0,1),'activation':(0,1),'match':(0,2)}
+        bounds={'custom':(0,1),'palette':(0,6),'filter':(0,3),'interpolation':(0,4),'emissivity':(10,100),'brightness':(5,100),'background':(0,100),'contour':(0,1),'paused':(0,1),'locked':(0,1),'mirror':(0,1),'activation':(0,1),'match':(0,2)}
         for key,value in data.items():
             if key in ('lower','upper'):continue
             if key=='point':
@@ -311,6 +311,8 @@ def params():
             else:
                 lo,hi=bounds[key]
                 if type(value)!=int or not lo<=value<=hi:raise ValueError('参数范围错误：'+key)
+                if key=='filter' and value not in (0,1,3):raise ValueError('此滤波档位已移除')
+                if key=='interpolation' and value not in (0,4):raise ValueError('此插值档位已移除')
                 commands.append((key,value))
         for command in commands:bridge.send(*command)
         return jsonify(ok=True)

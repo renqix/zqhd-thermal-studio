@@ -3,8 +3,8 @@ from pathlib import Path
 import argparse,pygame
 p=argparse.ArgumentParser();p.add_argument('font',type=Path);a=p.parse_args()
 pygame.font.init();font=pygame.font.Font(str(a.font),16)
-chars=sorted(set('映射最低最高温度自定义开关确定取消等待数据探头无设置返回滤波平滑快速插值关闭线性三次发率亮度图像测与显示模式白黑热经典铁红彩虹熔岩翠绿暂停锁屏清晰取当前用手动启时增强L3'))
-bitmap=[];glyphs=['{0,0,0,0,0,0}'];atlas=pygame.Surface((16*20,22*4));atlas.fill('black')
+chars=sorted(set('映射最低最高温度自定义开关确定取消等待数据探头无设置返回滤波平滑快速插值关闭线性三次发率亮度图像测与显示模式白黑热经典铁红彩虹熔岩翠绿暂停锁屏清晰取当前使用手动启时增强L3背景降噪保留细节更净仅影响画面轮廓'))
+bitmap=[];glyphs=['{0,0,0,0,0,0}'];atlas=pygame.Surface((16*20,22*((len(chars)+19)//20)));atlas.fill('black')
 for index,char in enumerate(chars):
     surface=font.render(char,False,'white','black');mask=pygame.mask.from_surface(surface)
     # 黑色背景是不透明的，按亮度寻找笔画范围，而非按alpha求边界。

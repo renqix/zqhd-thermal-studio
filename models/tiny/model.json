@@ -1,0 +1,16 @@
+{
+  "model": "compact12_weak02",
+  "tiny_revision": 5,
+  "architecture": [
+    14,
+    12,
+    8,
+    4
+  ],
+  "parameters": 320,
+  "mac_per_frame": 303104,
+  "weights_bytes": 404,
+  "firmware_baseline": 12,
+  "legacy_training_script": "tools/train_tiny.py仅重训legacy-v3，不能重现当前权重",
+  "training_note": "当前权重训练参考实机噪声统计；原始采样与私有训练集不公开，未声称完整训练可复现。"
+}
